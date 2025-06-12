@@ -3,6 +3,7 @@ package ip
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 func IsIPV6(ip *net.IP) bool {
@@ -60,4 +61,11 @@ func IsDefaultIPNet(ipnet *net.IPNet) bool {
 // IsDefaultIP determines if the ip is default, "0.0.0.0" or "::"
 func IsDefaultIP(ip net.IP) bool {
 	return (ip.Equal(net.IPv4zero) || ip.Equal(net.IPv6zero))
+}
+
+func IP2CIDR(ip string) string {
+	if !strings.Contains(ip, "/") {
+		return ip + "/32"
+	}
+	return ip
 }
