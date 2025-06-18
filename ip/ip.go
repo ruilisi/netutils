@@ -111,7 +111,18 @@ func GetOutboundIP(iface *net.Interface) (string, error) {
 	return "", errors.New("failed to find outbound ip")
 }
 
-func GetBroadcastIP() string {
+func GetBroadcastIPV4OfIPNet(ipnet *net.IPNet) string {
+	ip := ipnet.IP.To4()
+	if ip == nil {
+		return ""
+	}
+	mask := ipnet.Mask
+	bip := make(net.IP, len(ip))
+	binary.BigEndian.PutUint32(bip, binary.BigEndian.Uint32(ip)|^binary.BigEndian.Uint32(mask))
+	return bip.String()
+}
+
+func GetBroadcastIPV4() string {
 	iface, err := GetOutboundInterface()
 	if err != nil {
 		return ""
@@ -123,10 +134,10 @@ func GetBroadcastIP() string {
 	if len(addrs) == 0 {
 		return ""
 	}
-	ipnet := addrs[0].(*net.IPNet)
-	ip := ipnet.IP.To4()
-	mask := ipnet.Mask
-	bip := make(net.IP, len(ip))
-	binary.BigEndian.PutUint32(bip, binary.BigEndian.Uint32(ip)|^binary.BigEndian.Uint32(mask))
-	return bip.String()
+	for _, addr := range addrs {
+		if ip := GetBroadcastIPV4OfIPNet(addr.(*net.IPNet)); ip != "" {
+			return ip
+		}
+	}
+	return ""
 }
