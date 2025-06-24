@@ -8,10 +8,16 @@ var privateCIDRs = []*net.IPNet{}
 
 func init() {
 	for _, cidr := range []string{
+		// IPv4 RFC1918
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
-		"fc00::/7", // IPv6 Unique Local Address
+		"fc00::/7",       // IPv6 ULA
+		"fe80::/10",      // IPv6 Link-Local
+		"169.254.0.0/16", // IPv4 link-local
+		// Loopback
+		"127.0.0.0/8",
+		"::1/128",
 	} {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err == nil {

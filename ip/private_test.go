@@ -29,6 +29,10 @@ func TestIsPrivateNetwork(t *testing.T) {
 		// Edge cases
 		{"0.0.0.0/0", false},
 		{"::/0", false},
+		{"fe80::/64", true},      // Link-Local
+		{"169.254.0.0/16", true}, // IPv4 link-local
+		{"::1/128", true},        // v6 loopback
+		{"127.0.0.1/32", true},   // v4 loopback
 	}
 
 	for _, tt := range tests {

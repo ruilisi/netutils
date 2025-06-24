@@ -1,6 +1,7 @@
 package ip
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -140,4 +141,16 @@ func GetBroadcastIPV4() string {
 		}
 	}
 	return ""
+}
+
+// EqualIPNet returns true if two IPNet objects are exactly the same
+func EqualIPNet(a, b *net.IPNet) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	// Ensure IPs are in masked (network) form
+	aIP := a.IP.Mask(a.Mask)
+	bIP := b.IP.Mask(b.Mask)
+
+	return aIP.Equal(bIP) && bytes.Equal(a.Mask, b.Mask)
 }

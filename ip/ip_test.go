@@ -87,3 +87,32 @@ func TestIsDefaultRoute(t *testing.T) {
 		})
 	}
 }
+
+func TestEqualIPNet(t *testing.T) {
+	tests := []struct {
+		a      string
+		b      string
+		expect bool
+	}{
+		{"192.168.1.0/24", "192.168.1.0/24", true},
+		{"192.168.1.10/24", "192.168.1.0/24", true}, // masked IPs still same subnet
+		{"192.168.1.0/24", "192.168.2.0/24", false},
+		{"192.168.1.0/24", "192.168.1.0/25", false},
+		{"240e:3a1:4c21:e310::/64", "240e:3a1:4c21:e310::/64", true},
+		{"240e:3a1:4c21:e310::1/64", "240e:3a1:4c21:e310::/64", true},
+		{"240e:3a1:4c21:e310::/64", "240e:3a1:4c21::/56", false},
+		{"240e:3a1:4c21:e310::/32", "240e:3a1:4c21::/32", true},
+	}
+
+	for _, tt := range tests {
+		_, netA, errA := net.ParseCIDR(tt.a)
+		_, netB, errB := net.ParseCIDR(tt.b)
+		if errA != nil || errB != nil {
+			t.Fatalf("failed to parse CIDRs %q or %q", tt.a, tt.b)
+		}
+
+		if got := EqualIPNet(netA, netB); got != tt.expect {
+			t.Errorf("EqualIPNet(%q, %q) = %v; want %v", tt.a, tt.b, got, tt.expect)
+		}
+	}
+}
