@@ -97,6 +97,19 @@ func GetOutboundInterface() (*net.Interface, error) {
 	return nil, errors.New("failed to find outbound interface")
 }
 
+func GetOutboundIPNet(iface *net.Interface) (*net.IPNet, error) {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil, err
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			return ipnet, nil
+		}
+	}
+	return nil, errors.New("failed to find outbound ip")
+}
+
 func GetOutboundIP(iface *net.Interface) (string, error) {
 	addrs, err := iface.Addrs()
 	if err != nil {
@@ -153,4 +166,15 @@ func EqualIPNet(a, b *net.IPNet) bool {
 	bIP := b.IP.Mask(b.Mask)
 
 	return aIP.Equal(bIP) && bytes.Equal(a.Mask, b.Mask)
+}
+
+func IsIPStrInNet(ipStr string, ipNet *net.IPNet) bool {
+	if ipNet == nil {
+		return false
+	}
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	return ipNet.Contains(ip)
 }
