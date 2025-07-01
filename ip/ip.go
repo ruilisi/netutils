@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strings"
 )
 
@@ -177,4 +178,20 @@ func IsIPStrInNet(ipStr string, ipNet *net.IPNet) bool {
 		return false
 	}
 	return ipNet.Contains(ip)
+}
+
+func HostPortFromURL(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	port := u.Port()
+	if port == "" {
+		if u.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return u.Hostname() + ":" + port, nil
 }
