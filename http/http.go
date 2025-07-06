@@ -94,10 +94,10 @@ func DownloadSpeedTCP(conn net.Conn, reqBytes []byte, duration time.Duration) (f
 	}
 }
 
-func HostPortFromURL(rawURL string) (string, error) {
+func HostPortFromURL(rawURL string) (string, *url.URL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	port := u.Port()
 	if port == "" {
@@ -107,5 +107,5 @@ func HostPortFromURL(rawURL string) (string, error) {
 			port = "80"
 		}
 	}
-	return u.Hostname() + ":" + port, nil
+	return u.Hostname() + ":" + port, u, nil
 }
