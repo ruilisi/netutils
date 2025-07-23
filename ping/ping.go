@@ -1,8 +1,13 @@
 package ping
 
 import (
+	"context"
+	"errors"
 	"math/rand"
 	"net"
+	"os/exec"
+	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/net/icmp"
@@ -55,4 +60,46 @@ func FastPing(addr string, timeout time.Duration) error {
 			return nil
 		}
 	}
+}
+
+// PingCmd invokes ping command under the hood
+// **Successful ping result**
+/*
+PING 39.156.66.11 (39.156.66.11) 56(84) bytes of data.
+64 bytes from 39.156.66.11: icmp_seq=1 ttl=52 time=44.7 ms
+
+--- 39.156.66.11 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 44.753/44.753/44.753/0.000 ms
+*/
+// **Unsuccessful ping result**
+/*
+PING 40.156.66.11 (40.156.66.11) 56(84) bytes of data.
+
+--- 40.156.66.11 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+*/
+func PingCmd(target net.IP, timeout time.Duration) (time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+time.Millisecond*50)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", strconv.Itoa(int(timeout/time.Second)), target.String())
+	outputBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		return -1, err
+	}
+	output := string(outputBytes)
+	start := strings.Index(output, "rtt min/avg/max/mdev = ")
+	if start == -1 {
+		return -1, errors.New("rtt timeout")
+	}
+	parts := strings.Split(output[start+len("rtt min/avg/max/mdev = "):], "/")
+	if len(parts) == 0 {
+		return -1, errors.New("ping unavailable")
+	}
+	pingResult, err := strconv.ParseFloat(parts[0], 32)
+	if err != nil {
+		return -1, err
+	}
+	return time.Duration(pingResult) * time.Millisecond, nil
 }
