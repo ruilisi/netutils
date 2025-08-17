@@ -1,0 +1,4 @@
+# Copilot Instructions
+- Prefer Go idioms (e.g. error handling with `if err != nil`).
+- Use `net` package instead of external dependencies when possible.
+- For logging, use `log` instead of `fmt.Println`.

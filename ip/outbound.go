@@ -92,6 +92,7 @@ func GetOutboundIPNet(iface *net.Interface) (*net.IPNet, error) {
 	return nil, errors.New("failed to find outbound ip")
 }
 
+// GetOutboundIP retrieves the first outbound IP address of the given interface.
 func GetOutboundIP(iface *net.Interface) (string, error) {
 	if iface == nil {
 		return "", ErrNilIface
