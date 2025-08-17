@@ -116,3 +116,23 @@ func TestEqualIPNet(t *testing.T) {
 		}
 	}
 }
+
+func TestGetOutboundInterface(t *testing.T) {
+	iface, err := GetOutboundInterface()
+	if err != nil {
+		t.Fatalf("GetOutboundInterface failed: %v", err)
+	}
+	if iface == nil {
+		t.Fatal("expected non-nil interface, got nil")
+	}
+
+	addrs, err := iface.Addrs()
+	if err != nil {
+		t.Fatalf("failed to get addresses for iface %s: %v", iface.Name, err)
+	}
+	if len(addrs) == 0 {
+		t.Fatalf("interface %s has no addresses", iface.Name)
+	}
+
+	t.Logf("Outbound interface: %s (%v)", iface.Name, addrs)
+}
