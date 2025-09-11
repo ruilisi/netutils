@@ -1,6 +1,7 @@
 package ip
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"testing"
@@ -135,4 +136,163 @@ func TestGetOutboundInterface(t *testing.T) {
 	}
 
 	t.Logf("Outbound interface: %s (%v)", iface.Name, addrs)
+}
+
+func TestSummarizePacketIPv6(t *testing.T) {
+	tests := []struct {
+		name     string
+		packet   []byte
+		expected string
+	}{
+		{
+			name:     "too short packet",
+			packet:   []byte{0x60}, // Just version
+			expected: "invalid IPv6 packet (too short)",
+		},
+		{
+			name: "IPv6 UDP packet",
+			packet: func() []byte {
+				// Create a minimal IPv6 UDP packet
+				pkt := make([]byte, 48) // 40 IPv6 + 8 UDP
+
+				// IPv6 header
+				pkt[0] = 0x60                           // Version 6
+				binary.BigEndian.PutUint16(pkt[4:6], 8) // Payload length = 8 (UDP header)
+				pkt[6] = 17                             // Next Header = UDP
+				pkt[7] = 64                             // Hop Limit
+
+				// Source IP: 2001:db8::1
+				copy(pkt[8:24], net.ParseIP("2001:db8::1"))
+				// Dest IP: 2001:db8::2
+				copy(pkt[24:40], net.ParseIP("2001:db8::2"))
+
+				// UDP header
+				binary.BigEndian.PutUint16(pkt[40:42], 1234) // Source port
+				binary.BigEndian.PutUint16(pkt[42:44], 5678) // Dest port
+				binary.BigEndian.PutUint16(pkt[44:46], 8)    // UDP length
+				binary.BigEndian.PutUint16(pkt[46:48], 0)    // Checksum
+
+				return pkt
+			}(),
+			expected: "IPv6 2001:db8::1:1234→2001:db8::2:5678 UDP | 0B",
+		},
+		{
+			name: "IPv6 TCP packet",
+			packet: func() []byte {
+				// Create a minimal IPv6 TCP packet
+				pkt := make([]byte, 60) // 40 IPv6 + 20 TCP
+
+				// IPv6 header
+				pkt[0] = 0x60                            // Version 6
+				binary.BigEndian.PutUint16(pkt[4:6], 20) // Payload length = 20 (TCP header)
+				pkt[6] = 6                               // Next Header = TCP
+				pkt[7] = 64                              // Hop Limit
+
+				// Source IP: fe80::1
+				copy(pkt[8:24], net.ParseIP("fe80::1"))
+				// Dest IP: fe80::2
+				copy(pkt[24:40], net.ParseIP("fe80::2"))
+
+				// TCP header
+				binary.BigEndian.PutUint16(pkt[40:42], 8080) // Source port
+				binary.BigEndian.PutUint16(pkt[42:44], 80)   // Dest port
+				binary.BigEndian.PutUint32(pkt[44:48], 1000) // Seq number
+				binary.BigEndian.PutUint32(pkt[48:52], 2000) // Ack number
+				pkt[52] = 0x50                               // Data offset = 5 (20 bytes)
+				pkt[53] = 0x02                               // Flags = SYN
+				binary.BigEndian.PutUint16(pkt[54:56], 8192) // Window
+
+				return pkt
+			}(),
+			expected: "IPv6 fe80::1:8080→fe80::2:80 TCP 👋 | Seq=1000 Ack=2000 | 0B",
+		},
+		{
+			name: "IPv6 ICMPv6 packet",
+			packet: func() []byte {
+				// Create a minimal IPv6 ICMPv6 packet
+				pkt := make([]byte, 44) // 40 IPv6 + 4 ICMPv6
+
+				// IPv6 header
+				pkt[0] = 0x60                           // Version 6
+				binary.BigEndian.PutUint16(pkt[4:6], 4) // Payload length = 4 (ICMPv6 header)
+				pkt[6] = 58                             // Next Header = ICMPv6
+				pkt[7] = 64                             // Hop Limit
+
+				// Source IP: ::1
+				copy(pkt[8:24], net.ParseIP("::1"))
+				// Dest IP: ::2
+				copy(pkt[24:40], net.ParseIP("::2"))
+
+				// ICMPv6 header
+				pkt[40] = 128                             // Type = Echo Request
+				pkt[41] = 0                               // Code
+				binary.BigEndian.PutUint16(pkt[42:44], 0) // Checksum
+
+				return pkt
+			}(),
+			expected: "IPv6 ::1→::2 ICMPv6 Echo Req | 0B",
+		},
+		{
+			name: "IPv6 unknown protocol",
+			packet: func() []byte {
+				// Create IPv6 packet with unknown next header
+				pkt := make([]byte, 40) // Just IPv6 header
+
+				// IPv6 header
+				pkt[0] = 0x60                           // Version 6
+				binary.BigEndian.PutUint16(pkt[4:6], 0) // Payload length = 0
+				pkt[6] = 99                             // Next Header = unknown
+				pkt[7] = 64                             // Hop Limit
+
+				// Source IP: 2001:db8::1
+				copy(pkt[8:24], net.ParseIP("2001:db8::1"))
+				// Dest IP: 2001:db8::2
+				copy(pkt[24:40], net.ParseIP("2001:db8::2"))
+
+				return pkt
+			}(),
+			expected: "IPv6 2001:db8::1→2001:db8::2 | Proto=99 | 0B",
+		},
+		{
+			name: "IPv6 with extension header",
+			packet: func() []byte {
+				// Create IPv6 packet with Hop-by-Hop options header
+				pkt := make([]byte, 56) // 40 IPv6 + 8 hop-by-hop + 8 UDP
+
+				// IPv6 header
+				pkt[0] = 0x60                            // Version 6
+				binary.BigEndian.PutUint16(pkt[4:6], 16) // Payload length = 16 (8 hop-by-hop + 8 UDP)
+				pkt[6] = 0                               // Next Header = Hop-by-Hop Options
+				pkt[7] = 64                              // Hop Limit
+
+				// Source IP: 2001:db8::1
+				copy(pkt[8:24], net.ParseIP("2001:db8::1"))
+				// Dest IP: 2001:db8::2
+				copy(pkt[24:40], net.ParseIP("2001:db8::2"))
+
+				// Hop-by-Hop Options header (8 bytes)
+				pkt[40] = 17 // Next Header = UDP
+				pkt[41] = 0  // Hdr Ext Len = 0 (means 8 bytes total)
+				// 6 bytes of padding/options
+
+				// UDP header
+				binary.BigEndian.PutUint16(pkt[48:50], 1234) // Source port
+				binary.BigEndian.PutUint16(pkt[50:52], 5678) // Dest port
+				binary.BigEndian.PutUint16(pkt[52:54], 8)    // UDP length
+				binary.BigEndian.PutUint16(pkt[54:56], 0)    // Checksum
+
+				return pkt
+			}(),
+			expected: "IPv6 2001:db8::1:1234→2001:db8::2:5678 UDP | 0B",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := SummarizePacket(tt.packet)
+			if result != tt.expected {
+				t.Errorf("SummarizePacket() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
 }
