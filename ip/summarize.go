@@ -13,6 +13,7 @@ SummarizePacket parses a raw IPv4 packet and returns a human readable summary.
 Supported L4 protocols:
 - TCP (protocol = 6)
 - ICMPv4 (protocol = 1)
+- UDP (protocol = 17)
 
 For other L4 protocols a short notice is returned.
 
@@ -63,6 +64,8 @@ func summarizeIPv4(pkt []byte) string {
 		return summarizeTCPShort(pkt, ihl, totalLen, srcIP, dstIP)
 	case 1: // ICMPv4
 		return summarizeICMPv4Short(pkt, ihl, totalLen, srcIP, dstIP)
+	case 17: // UDP
+		return summarizeUDPShort(pkt, ihl, totalLen, srcIP, dstIP)
 	default:
 		return fmt.Sprintf("IPv4 %s→%s | Proto=%d | Payload=%dB", srcIP, dstIP, proto, max(totalLen-ihl, 0))
 	}
@@ -142,6 +145,28 @@ func summarizeICMPv4Short(pkt []byte, ihl, totalLen int, srcIP, dstIP net.IP) st
 	desc := icmpTypeStringShort(icmpType, icmpCode)
 
 	return fmt.Sprintf("IPv4 %s→%s ICMP %s | %dB", srcIP, dstIP, desc, payloadLen)
+}
+
+// summarizeUDPShort outputs a minimal UDP summary
+func summarizeUDPShort(pkt []byte, ihl, totalLen int, srcIP, dstIP net.IP) string {
+	if len(pkt) < ihl+8 {
+		return fmt.Sprintf("IPv4 %s→%s UDP | invalid header", srcIP, dstIP)
+	}
+	udp := pkt[ihl:]
+	if len(udp) < 8 {
+		return fmt.Sprintf("IPv4 %s→%s UDP | len < 8", srcIP, dstIP)
+	}
+
+	srcPort := binary.BigEndian.Uint16(udp[0:2])
+	dstPort := binary.BigEndian.Uint16(udp[2:4])
+	udpLen := int(binary.BigEndian.Uint16(udp[4:6]))
+	payloadLen := max(udpLen-8, 0)
+	// If udpLen > totalLen-ihl, adjust to actual captured
+	if udpLen > totalLen-ihl {
+		payloadLen = max(totalLen-ihl-8, 0)
+	}
+
+	return fmt.Sprintf("IPv4 %s:%d→%s:%d UDP | %dB", srcIP, srcPort, dstIP, dstPort, payloadLen)
 }
 
 // Short human readable string for ICMP type/code
