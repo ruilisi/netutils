@@ -8,16 +8,14 @@ import (
 
 // ExtractDNSFromPacket inspects a raw IP packet, auto-detects IPv4/IPv6,
 // finds a UDP/53 payload, and parses the DNS message to return:
-// - dnsPayload: raw DNS bytes starting at the DNS header
 // - qnames: question names (from QD section)
 // - ips: resolved IPs (A/AAAA) from the Answer section (responses only)
 // - isQuery: true if QR=0 (query), false if QR=1 (response)
 // - dnsAddr: DNS server IP address (destination for queries, source for responses)
-// - role: "queried" for queries (QR=0), "answered" for responses (QR=1)
 // - ok: true if this looks like a valid DNS packet
-func ExtractDNSFromPacket(pkt []byte) (dnsPayload []byte, qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, role string, ok bool) {
+func ExtractDNSFromPacket(pkt []byte) (qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, ok bool) {
 	if len(pkt) < 1 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	switch pkt[0] >> 4 {
 	case 4:
@@ -25,36 +23,36 @@ func ExtractDNSFromPacket(pkt []byte) (dnsPayload []byte, qnames []string, ips [
 	case 6:
 		return extractDNSFromIPv6(pkt)
 	default:
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 }
 
-func extractDNSFromIPv4(pkt []byte) (dnsPayload []byte, qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, role string, ok bool) {
+func extractDNSFromIPv4(pkt []byte) (qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, ok bool) {
 	if len(pkt) < 20 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	ihl := int(pkt[0]&0x0F) * 4
 	if ihl < 20 || len(pkt) < ihl+8 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	// Fragmentation guard: skip non-first fragments or more fragments.
 	frag := binary.BigEndian.Uint16(pkt[6:8])
 	mf := (frag & 0x2000) != 0
 	off := (frag & 0x1FFF)
 	if mf || off != 0 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	if pkt[9] != 17 { // UDP
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	udp := pkt[ihl:]
 	if len(udp) < 8 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	srcPort := binary.BigEndian.Uint16(udp[0:2])
 	dstPort := binary.BigEndian.Uint16(udp[2:4])
 	if srcPort != 53 && dstPort != 53 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	udpLen := int(binary.BigEndian.Uint16(udp[4:6]))
 	payloadOffset := ihl + 8
@@ -63,37 +61,34 @@ func extractDNSFromIPv4(pkt []byte) (dnsPayload []byte, qnames []string, ips []n
 		payloadEnd = len(pkt)
 	}
 	if payloadOffset >= payloadEnd || payloadOffset > len(pkt) {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	payload := pkt[payloadOffset:payloadEnd]
 	qn, ipList, query, ok2 := parseDNSMessage(payload)
 	if !ok2 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	
 	// Extract source and destination IP addresses
 	srcIP := net.IP(pkt[12:16])
 	dstIP := net.IP(pkt[16:20])
 	
-	// Determine DNS server address and role based on query/response
+	// Determine DNS server address based on query/response
 	var serverIP net.IP
-	var roleStr string
 	if query {
 		// For queries: DNS server is the destination
 		serverIP = dstIP
-		roleStr = "queried"
 	} else {
 		// For responses: DNS server is the source
 		serverIP = srcIP
-		roleStr = "answered"
 	}
 	
-	return payload, qn, ipList, query, serverIP, roleStr, true
+	return qn, ipList, query, serverIP, true
 }
 
-func extractDNSFromIPv6(pkt []byte) (dnsPayload []byte, qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, role string, ok bool) {
+func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, ok bool) {
 	if len(pkt) < 40 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	
 	// Extract source and destination IP addresses from IPv6 header
@@ -111,18 +106,18 @@ func extractDNSFromIPv6(pkt []byte) (dnsPayload []byte, qnames []string, ips []n
 			break
 		}
 		if remaining <= 0 || i >= len(pkt) {
-			return nil, nil, nil, false, nil, "", false
+			return nil, nil, false, nil, false
 		}
 		switch next {
 		case 0, 43, 60: // Hop-by-Hop, Routing, Dest Options
 			if i+2 > len(pkt) {
-				return nil, nil, nil, false, nil, "", false
+				return nil, nil, false, nil, false
 			}
 			n := pkt[i]        // Next Header
 			extLen := pkt[i+1] // in 8-octet units, not including first 8 bytes
 			size := int(extLen+1) * 8
 			if i+size > len(pkt) || size > remaining {
-				return nil, nil, nil, false, nil, "", false
+				return nil, nil, false, nil, false
 			}
 			next = n
 			i += size
@@ -130,7 +125,7 @@ func extractDNSFromIPv6(pkt []byte) (dnsPayload []byte, qnames []string, ips []n
 		case 44: // Fragment
 			// 8 bytes fixed: NextHeader(1), Reserved(1), FragOff/Flags(2), ID(4)
 			if i+8 > len(pkt) || remaining < 8 {
-				return nil, nil, nil, false, nil, "", false
+				return nil, nil, false, nil, false
 			}
 			n := pkt[i]
 			fragOffFlags := binary.BigEndian.Uint16(pkt[i+2 : i+4])
@@ -138,39 +133,39 @@ func extractDNSFromIPv6(pkt []byte) (dnsPayload []byte, qnames []string, ips []n
 			mFlag := (fragOffFlags & 0x0001) != 0
 			// Only attempt to parse first fragment with offset 0. If more fragments, skip.
 			if fragOffset != 0 || mFlag {
-				return nil, nil, nil, false, nil, "", false
+				return nil, nil, false, nil, false
 			}
 			next = n
 			i += 8
 			remaining -= 8
 		case 51: // AH (Authentication Header) - length in 4-octet units, including first 2 words
 			if i+2 > len(pkt) || remaining < 2 {
-				return nil, nil, nil, false, nil, "", false
+				return nil, nil, false, nil, false
 			}
 			n := pkt[i]
 			len4 := int(pkt[i+1]+2) * 4
 			if i+len4 > len(pkt) || len4 > remaining {
-				return nil, nil, nil, false, nil, "", false
+				return nil, nil, false, nil, false
 			}
 			next = n
 			i += len4
 			remaining -= len4
 		case 50: // ESP - cannot parse further without SA; bail
-			return nil, nil, nil, false, nil, "", false
+			return nil, nil, false, nil, false
 		default:
 			// Unknown header; bail
-			return nil, nil, nil, false, nil, "", false
+			return nil, nil, false, nil, false
 		}
 	}
 
 	// At UDP header
 	if i+8 > len(pkt) || remaining < 8 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	srcPort := binary.BigEndian.Uint16(pkt[i : i+2])
 	dstPort := binary.BigEndian.Uint16(pkt[i+2 : i+4])
 	if srcPort != 53 && dstPort != 53 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	udpLen := int(binary.BigEndian.Uint16(pkt[i+4 : i+6]))
 	payloadOffset := i + 8
@@ -179,28 +174,25 @@ func extractDNSFromIPv6(pkt []byte) (dnsPayload []byte, qnames []string, ips []n
 		payloadEnd = len(pkt)
 	}
 	if payloadOffset >= payloadEnd || payloadOffset > len(pkt) {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	payload := pkt[payloadOffset:payloadEnd]
 	qn, ipList, query, ok2 := parseDNSMessage(payload)
 	if !ok2 {
-		return nil, nil, nil, false, nil, "", false
+		return nil, nil, false, nil, false
 	}
 	
-	// Determine DNS server address and role based on query/response
+	// Determine DNS server address based on query/response
 	var serverIP net.IP
-	var roleStr string
 	if query {
 		// For queries: DNS server is the destination
 		serverIP = dstIP
-		roleStr = "queried"
 	} else {
 		// For responses: DNS server is the source
 		serverIP = srcIP
-		roleStr = "answered"
 	}
 	
-	return payload, qn, ipList, query, serverIP, roleStr, true
+	return qn, ipList, query, serverIP, true
 }
 
 // parseDNSMessage parses DNS payload, returning question names and A/AAAA IPs.
