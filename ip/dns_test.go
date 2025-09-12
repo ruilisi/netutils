@@ -123,7 +123,7 @@ func TestExtractDNSFromPacket_IPv4_Query(t *testing.T) {
 	// Create IPv4 DNS query packet (client -> server)
 	pkt := createIPv4DNSPacket(clientIP, serverIP, 12345, 53, true)
 	
-	dnsPayload, _, ips, isQuery, dnsAddr, role, ok := ExtractDNSFromPacket(pkt)
+	_, ips, isQuery, dnsAddr, ok := ExtractDNSFromPacket(pkt)
 	
 	if !ok {
 		t.Fatal("Expected ok=true for valid DNS query packet")
@@ -133,16 +133,8 @@ func TestExtractDNSFromPacket_IPv4_Query(t *testing.T) {
 		t.Error("Expected isQuery=true for DNS query packet")
 	}
 	
-	if role != "queried" {
-		t.Errorf("Expected role='queried' for DNS query, got '%s'", role)
-	}
-	
 	if !dnsAddr.Equal(serverIP) {
 		t.Errorf("Expected dnsAddr=%s (destination), got %s", serverIP, dnsAddr)
-	}
-	
-	if len(dnsPayload) == 0 {
-		t.Error("Expected non-empty DNS payload")
 	}
 	
 	// For queries, we don't expect resolved IPs
@@ -158,7 +150,7 @@ func TestExtractDNSFromPacket_IPv4_Response(t *testing.T) {
 	// Create IPv4 DNS response packet (server -> client)
 	pkt := createIPv4DNSPacket(serverIP, clientIP, 53, 12345, false)
 	
-	dnsPayload, _, _, isQuery, dnsAddr, role, ok := ExtractDNSFromPacket(pkt)
+	_, _, isQuery, dnsAddr, ok := ExtractDNSFromPacket(pkt)
 	
 	if !ok {
 		t.Fatal("Expected ok=true for valid DNS response packet")
@@ -168,16 +160,8 @@ func TestExtractDNSFromPacket_IPv4_Response(t *testing.T) {
 		t.Error("Expected isQuery=false for DNS response packet")
 	}
 	
-	if role != "answered" {
-		t.Errorf("Expected role='answered' for DNS response, got '%s'", role)
-	}
-	
 	if !dnsAddr.Equal(serverIP) {
 		t.Errorf("Expected dnsAddr=%s (source), got %s", serverIP, dnsAddr)
-	}
-	
-	if len(dnsPayload) == 0 {
-		t.Error("Expected non-empty DNS payload")
 	}
 }
 
@@ -188,7 +172,7 @@ func TestExtractDNSFromPacket_IPv6_Query(t *testing.T) {
 	// Create IPv6 DNS query packet (client -> server)
 	pkt := createIPv6DNSPacket(clientIP, serverIP, 12345, 53, true)
 	
-	dnsPayload, _, _, isQuery, dnsAddr, role, ok := ExtractDNSFromPacket(pkt)
+	_, _, isQuery, dnsAddr, ok := ExtractDNSFromPacket(pkt)
 	
 	if !ok {
 		t.Fatal("Expected ok=true for valid IPv6 DNS query packet")
@@ -198,16 +182,8 @@ func TestExtractDNSFromPacket_IPv6_Query(t *testing.T) {
 		t.Error("Expected isQuery=true for DNS query packet")
 	}
 	
-	if role != "queried" {
-		t.Errorf("Expected role='queried' for DNS query, got '%s'", role)
-	}
-	
 	if !dnsAddr.Equal(serverIP) {
 		t.Errorf("Expected dnsAddr=%s (destination), got %s", serverIP, dnsAddr)
-	}
-	
-	if len(dnsPayload) == 0 {
-		t.Error("Expected non-empty DNS payload")
 	}
 }
 
@@ -218,7 +194,7 @@ func TestExtractDNSFromPacket_IPv6_Response(t *testing.T) {
 	// Create IPv6 DNS response packet (server -> client)
 	pkt := createIPv6DNSPacket(serverIP, clientIP, 53, 12345, false)
 	
-	dnsPayload, _, _, isQuery, dnsAddr, role, ok := ExtractDNSFromPacket(pkt)
+	_, _, isQuery, dnsAddr, ok := ExtractDNSFromPacket(pkt)
 	
 	if !ok {
 		t.Fatal("Expected ok=true for valid IPv6 DNS response packet")
@@ -228,16 +204,8 @@ func TestExtractDNSFromPacket_IPv6_Response(t *testing.T) {
 		t.Error("Expected isQuery=false for DNS response packet")
 	}
 	
-	if role != "answered" {
-		t.Errorf("Expected role='answered' for DNS response, got '%s'", role)
-	}
-	
 	if !dnsAddr.Equal(serverIP) {
 		t.Errorf("Expected dnsAddr=%s (source), got %s", serverIP, dnsAddr)
-	}
-	
-	if len(dnsPayload) == 0 {
-		t.Error("Expected non-empty DNS payload")
 	}
 }
 
@@ -245,14 +213,10 @@ func TestExtractDNSFromPacket_InvalidPacket(t *testing.T) {
 	// Test with invalid packet
 	invalidPkt := []byte{0x99, 0x01, 0x02}
 	
-	dnsPayload, qnames, ips, _, dnsAddr, role, ok := ExtractDNSFromPacket(invalidPkt)
+	qnames, ips, _, dnsAddr, ok := ExtractDNSFromPacket(invalidPkt)
 	
 	if ok {
 		t.Error("Expected ok=false for invalid packet")
-	}
-	
-	if len(dnsPayload) != 0 {
-		t.Error("Expected empty DNS payload for invalid packet")
 	}
 	
 	if len(qnames) != 0 {
@@ -265,10 +229,6 @@ func TestExtractDNSFromPacket_InvalidPacket(t *testing.T) {
 	
 	if dnsAddr != nil {
 		t.Error("Expected nil dnsAddr for invalid packet")
-	}
-	
-	if role != "" {
-		t.Error("Expected empty role for invalid packet")
 	}
 }
 
@@ -286,7 +246,7 @@ func TestExtractDNSFromPacket_NonDNSPacket(t *testing.T) {
 	binary.BigEndian.PutUint16(pkt[22:24], 80)    // Destination port (not 53)
 	binary.BigEndian.PutUint16(pkt[24:26], 12)    // UDP length
 	
-	_, _, _, _, dnsAddr, role, ok := ExtractDNSFromPacket(pkt)
+	_, _, _, dnsAddr, ok := ExtractDNSFromPacket(pkt)
 	
 	if ok {
 		t.Error("Expected ok=false for non-DNS packet")
@@ -294,9 +254,5 @@ func TestExtractDNSFromPacket_NonDNSPacket(t *testing.T) {
 	
 	if dnsAddr != nil {
 		t.Error("Expected nil dnsAddr for non-DNS packet")
-	}
-	
-	if role != "" {
-		t.Error("Expected empty role for non-DNS packet")
 	}
 }
