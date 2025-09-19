@@ -6,8 +6,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-// DNSExchangeRawLocally handles common DNS queries like nslookup
-func DNSExchangeRawLocally(pkt []byte) ([]byte, error) {
+// ExchangeRawLocal handles common DNS queries like nslookup
+func ExchangeRawLocal(pkt []byte) (resMsg *dns.Msg, err error) {
 	msg := new(dns.Msg)
 	if err := msg.Unpack(pkt); err != nil {
 		return nil, err
@@ -34,11 +34,9 @@ func DNSExchangeRawLocally(pkt []byte) ([]byte, error) {
 			reply.Rcode = dns.RcodeNotImplemented
 		}
 	}
-
-	return reply.Pack()
+	return reply, nil
 }
 
-// helper functions
 func addARecords(reply *dns.Msg, q dns.Question) {
 	ips, _ := net.LookupHost(q.Name)
 	for _, ip := range ips {
