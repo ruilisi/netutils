@@ -38,15 +38,10 @@ func TestDNSExchangeRawLocally(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			query := buildQuery(tt.name, tt.qtype)
-			respBytes, err := DNSExchangeRawLocally(query)
+			resp, err := ExchangeRawLocal(query)
 			if err != nil {
 				t.Fatalf("DNSExchangeRawLocally returned error: %v", err)
 			}
-			resp, err := unpackResponse(respBytes)
-			if err != nil {
-				t.Fatalf("failed to unpack response: %v", err)
-			}
-
 			if resp.Rcode != dns.RcodeSuccess && resp.Rcode != dns.RcodeNameError {
 				t.Errorf("unexpected RCODE: %d", resp.Rcode)
 			}
@@ -66,11 +61,10 @@ func TestDNSExchangeRawLocally(t *testing.T) {
 func TestUnsupportedType(t *testing.T) {
 	// Use a query type that is not implemented (e.g., SRV)
 	query := buildQuery("baidu.com.", dns.TypeSRV)
-	respBytes, err := DNSExchangeRawLocally(query)
+	resp, err := ExchangeRawLocal(query)
 	if err != nil {
 		t.Fatalf("DNSExchangeRawLocally returned error: %v", err)
 	}
-	resp, _ := unpackResponse(respBytes)
 	if resp.Rcode != dns.RcodeNotImplemented {
 		t.Errorf("expected RCODE NotImplemented, got %d", resp.Rcode)
 	}

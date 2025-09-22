@@ -68,11 +68,11 @@ func extractDNSFromIPv4(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 	if !ok2 {
 		return nil, nil, false, nil, false
 	}
-	
+
 	// Extract source and destination IP addresses
 	srcIP := net.IP(pkt[12:16])
 	dstIP := net.IP(pkt[16:20])
-	
+
 	// Determine DNS server address based on query/response
 	var serverIP net.IP
 	if query {
@@ -82,7 +82,7 @@ func extractDNSFromIPv4(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 		// For responses: DNS server is the source
 		serverIP = srcIP
 	}
-	
+
 	return qn, ipList, query, serverIP, true
 }
 
@@ -90,11 +90,11 @@ func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 	if len(pkt) < 40 {
 		return nil, nil, false, nil, false
 	}
-	
+
 	// Extract source and destination IP addresses from IPv6 header
 	srcIP := net.IP(pkt[8:24])
 	dstIP := net.IP(pkt[24:40])
-	
+
 	next := pkt[6]
 	payloadLen := int(binary.BigEndian.Uint16(pkt[4:6])) // bytes after fixed 40-byte header
 	i := 40
@@ -181,7 +181,7 @@ func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 	if !ok2 {
 		return nil, nil, false, nil, false
 	}
-	
+
 	// Determine DNS server address based on query/response
 	var serverIP net.IP
 	if query {
@@ -191,7 +191,7 @@ func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 		// For responses: DNS server is the source
 		serverIP = srcIP
 	}
-	
+
 	return qn, ipList, query, serverIP, true
 }
 
