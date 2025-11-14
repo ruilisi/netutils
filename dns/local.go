@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/miekg/dns"
@@ -10,7 +11,7 @@ import (
 func ExchangeRawLocal(pkt []byte) (resMsg *dns.Msg, err error) {
 	msg := new(dns.Msg)
 	if err := msg.Unpack(pkt); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unpack dns message: %v", err)
 	}
 
 	reply := new(dns.Msg)
