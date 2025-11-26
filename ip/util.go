@@ -40,6 +40,73 @@ func IpToUint32(ip net.IP) uint32 {
 	return binary.BigEndian.Uint32(ip)
 }
 
+// GetIPVer extracts the IP version from an IP packet.
+// Returns 4 for IPv4, 6 for IPv6, or 0 for invalid packets.
+func GetIPVer(packet []byte) uint8 {
+	if len(packet) < 1 {
+		return 0
+	}
+	version := packet[0] >> 4
+	if version == 4 || version == 6 {
+		return version
+	}
+	return 0
+}
+
+// GetVerProto extracts ip version and protocol (e.g., 6 for TCP, 17 for UDP, 1 for ICMP) from an IP packet.
+// version 0 means invalid packet.
+func GetVerProto(packet []byte) (uint8, uint8) {
+	if len(packet) < 20 {
+		return 0, 0
+	}
+
+	version := packet[0] >> 4
+
+	switch version {
+	case 4:
+		return version, packet[9]
+	case 6:
+		if len(packet) < 40 {
+			return 0, 0
+		}
+		return version, packet[6]
+	default:
+		return 0, 0
+	}
+}
+
+// GetIPs extracts source and destination IP addresses from an IP packet.
+// Returns (srcIP, dstIP) for valid IPv4/IPv6 packets, or (nil, nil) for malformed packets.
+func GetIPs(packet []byte) (srcIP, dstIP net.IP) {
+	if len(packet) < 20 {
+		return nil, nil
+	}
+
+	// Determine IP version
+	version := packet[0] >> 4
+
+	switch version {
+	case 4: // IPv4
+		if len(packet) < 20 {
+			return nil, nil
+		}
+		// IPv4 addresses are 4 bytes each
+		srcIP = net.IP(packet[12:16])
+		dstIP = net.IP(packet[16:20])
+	case 6: // IPv6
+		if len(packet) < 40 {
+			return nil, nil
+		}
+		// IPv6 addresses are 16 bytes each
+		srcIP = net.IP(packet[8:24])
+		dstIP = net.IP(packet[24:40])
+	default:
+		return nil, nil
+	}
+
+	return srcIP, dstIP
+}
+
 // GetPorts extracts source and destination ports from an IP packet.
 // Returns (srcPort, dstPort) for TCP/UDP packets, or (0, 0) for other protocols
 // or malformed packets.

@@ -7,57 +7,71 @@ import (
 	"net"
 )
 
-// ExtractUDPPayload extracts the UDP payload from a raw IP packet (IPv4 or IPv6)
-func ExtractUDPPayload(packet []byte) ([]byte, error) {
+// ExtractUDPPayload extracts the UDP payload and addressing information from a raw IP packet (IPv4 or IPv6)
+// Returns: payload, srcIP, srcPort, dstIP, dstPort, error
+func ExtractUDPPayload(packet []byte) ([]byte, net.IP, uint16, net.IP, uint16, error) {
 	if len(packet) < 1 {
-		return nil, errors.New("packet too short")
+		return nil, nil, 0, nil, 0, errors.New("packet too short")
 	}
 
 	ipVersion := packet[0] >> 4
 	var ipHeaderLen int
+	var srcIP, dstIP net.IP
+
 	switch ipVersion {
 	case 4: // IPv4
 		if len(packet) < 20 {
-			return nil, errors.New("packet too short for IPv4 header")
+			return nil, nil, 0, nil, 0, errors.New("packet too short for IPv4 header")
 		}
 		// Get IP header length (in 32-bit words)
 		ipHeaderLen = int(packet[0]&0x0F) << 2
 		if ipHeaderLen < 20 {
-			return nil, errors.New("invalid IPv4 header length")
+			return nil, nil, 0, nil, 0, errors.New("invalid IPv4 header length")
 		}
 		// Ensure packet is at least as long as the IP header
 		if len(packet) < ipHeaderLen {
-			return nil, errors.New("packet shorter than IP header length")
+			return nil, nil, 0, nil, 0, errors.New("packet shorter than IP header length")
 		}
 		// Verify this is a UDP packet (protocol field at byte 9)
 		if packet[9] != 17 {
-			return nil, fmt.Errorf("not a UDP packet: protocol %d", packet[9])
+			return nil, nil, 0, nil, 0, fmt.Errorf("not a UDP packet: protocol %d", packet[9])
 		}
+		// Extract source and destination IPs (IPv4)
+		srcIP = net.IP(packet[12:16])
+		dstIP = net.IP(packet[16:20])
 	case 6: // IPv6 - fixed 40 byte header
 		if len(packet) < 40 {
-			return nil, errors.New("packet too short for IPv6 header")
+			return nil, nil, 0, nil, 0, errors.New("packet too short for IPv6 header")
 		}
 		ipHeaderLen = 40
 		// Verify this is a UDP packet (Next Header field at byte 6)
 		if packet[6] != 17 {
-			return nil, fmt.Errorf("not a UDP packet: next header %d", packet[6])
+			return nil, nil, 0, nil, 0, fmt.Errorf("not a UDP packet: next header %d", packet[6])
 		}
+		// Extract source and destination IPs (IPv6)
+		srcIP = net.IP(packet[8:24])
+		dstIP = net.IP(packet[24:40])
 		// TODO: handle extension headers if needed
 	default:
-		return nil, fmt.Errorf("unsupported IP version: %d", ipVersion)
+		return nil, nil, 0, nil, 0, fmt.Errorf("unsupported IP version: %d", ipVersion)
 	}
 
 	if len(packet) < ipHeaderLen+8 {
-		return nil, errors.New("packet too short for UDP header")
+		return nil, nil, 0, nil, 0, errors.New("packet too short for UDP header")
 	}
+
+	// Extract UDP ports from UDP header
+	udpHeader := packet[ipHeaderLen : ipHeaderLen+8]
+	srcPort := binary.BigEndian.Uint16(udpHeader[0:2])
+	dstPort := binary.BigEndian.Uint16(udpHeader[2:4])
 
 	// UDP payload starts after IP header + UDP header (8 bytes)
 	payloadOffset := ipHeaderLen + 8
 	if len(packet) <= payloadOffset {
-		return []byte{}, nil
+		return []byte{}, srcIP, srcPort, dstIP, dstPort, nil
 	}
 
-	return packet[payloadOffset:], nil
+	return packet[payloadOffset:], srcIP, srcPort, dstIP, dstPort, nil
 }
 
 // BuildIPv4UDPPacket constructs an IPv4 UDP packet
