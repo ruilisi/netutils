@@ -107,6 +107,13 @@ func GetIPs(packet []byte) (srcIP, dstIP net.IP) {
 	return srcIP, dstIP
 }
 
+// IsUDP determines whether an IP packet is a UDP packet.
+// Returns true if the packet is a valid IPv4 or IPv6 UDP packet, false otherwise.
+func IsUDP(packet []byte) bool {
+	_, proto := GetVerProto(packet)
+	return proto == ProtoUDP
+}
+
 // GetPorts extracts source and destination ports from an IP packet.
 // Returns (srcPort, dstPort) for TCP/UDP packets, or (0, 0) for other protocols
 // or malformed packets.
@@ -142,9 +149,8 @@ func GetPorts(packet []byte) (srcPort, dstPort uint16) {
 		return 0, 0
 	}
 
-	// Protocol numbers: TCP = 6, UDP = 17
 	// Both TCP and UDP have ports at the same offset (first 4 bytes)
-	if protocol == 6 || protocol == 17 {
+	if protocol == ProtoTCP || protocol == ProtoUDP {
 		transportHeader := packet[headerLen:]
 		srcPort = binary.BigEndian.Uint16(transportHeader[0:2])
 		dstPort = binary.BigEndian.Uint16(transportHeader[2:4])

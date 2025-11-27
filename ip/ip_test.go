@@ -138,6 +138,103 @@ func TestGetOutboundInterface(t *testing.T) {
 	t.Logf("Outbound interface: %s (%v)", iface.Name, addrs)
 }
 
+func TestIsUDP(t *testing.T) {
+	tests := []struct {
+		name     string
+		packet   []byte
+		expected bool
+	}{
+		{
+			name: "IPv4 UDP packet",
+			packet: func() []byte {
+				pkt := make([]byte, 28) // 20 IPv4 + 8 UDP
+				pkt[0] = 0x45           // Version 4, header length 5
+				pkt[9] = 17             // Protocol: UDP
+				return pkt
+			}(),
+			expected: true,
+		},
+		{
+			name: "IPv6 UDP packet",
+			packet: func() []byte {
+				pkt := make([]byte, 48) // 40 IPv6 + 8 UDP
+				pkt[0] = 0x60           // Version 6
+				pkt[6] = 17             // Next Header: UDP
+				return pkt
+			}(),
+			expected: true,
+		},
+		{
+			name: "IPv4 TCP packet",
+			packet: func() []byte {
+				pkt := make([]byte, 40) // 20 IPv4 + 20 TCP
+				pkt[0] = 0x45           // Version 4, header length 5
+				pkt[9] = 6              // Protocol: TCP
+				return pkt
+			}(),
+			expected: false,
+		},
+		{
+			name: "IPv6 TCP packet",
+			packet: func() []byte {
+				pkt := make([]byte, 60) // 40 IPv6 + 20 TCP
+				pkt[0] = 0x60           // Version 6
+				pkt[6] = 6              // Next Header: TCP
+				return pkt
+			}(),
+			expected: false,
+		},
+		{
+			name: "IPv4 ICMP packet",
+			packet: func() []byte {
+				pkt := make([]byte, 28) // 20 IPv4 + 8 ICMP
+				pkt[0] = 0x45           // Version 4, header length 5
+				pkt[9] = 1              // Protocol: ICMP
+				return pkt
+			}(),
+			expected: false,
+		},
+		{
+			name: "IPv6 ICMPv6 packet",
+			packet: func() []byte {
+				pkt := make([]byte, 44) // 40 IPv6 + 4 ICMPv6
+				pkt[0] = 0x60           // Version 6
+				pkt[6] = 58             // Next Header: ICMPv6
+				return pkt
+			}(),
+			expected: false,
+		},
+		{
+			name:     "empty packet",
+			packet:   []byte{},
+			expected: false,
+		},
+		{
+			name:     "too short packet",
+			packet:   []byte{0x45},
+			expected: false,
+		},
+		{
+			name: "invalid IP version",
+			packet: func() []byte {
+				pkt := make([]byte, 20)
+				pkt[0] = 0x35 // Version 3 (invalid)
+				return pkt
+			}(),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsUDP(tt.packet)
+			if result != tt.expected {
+				t.Errorf("IsUDP() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestSummarizePacketIPv6(t *testing.T) {
 	tests := []struct {
 		name     string

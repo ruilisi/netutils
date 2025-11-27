@@ -81,16 +81,20 @@ func BuildIPv4UDPPacket(localAddr *net.UDPAddr, srcAddr *net.UDPAddr, payload []
 	totalLen := 20 + 8 + len(payload)
 	packet := make([]byte, totalLen)
 
+	// Normalize IPs to IPv4 format (4 bytes) to ensure proper checksum calculation
+	srcIPv4 := srcAddr.IP.To4()
+	dstIPv4 := localAddr.IP.To4()
+
 	// Build minimal IPv4 header
 	packet[0] = 0x45 // Version 4, header length 5 (20 bytes)
 	packet[1] = 0x00 // TOS
 
 	// Update IP header
-	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen))           // Total length
-	packet[8] = 255                                                     // TTL
-	packet[9] = 17                                                      // Protocol: UDP
-	binary.BigEndian.PutUint32(packet[12:16], ipToUint32(srcAddr.IP))   // Source IP
-	binary.BigEndian.PutUint32(packet[16:20], ipToUint32(localAddr.IP)) // Dest IP
+	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen))      // Total length
+	packet[8] = 255                                                // TTL
+	packet[9] = 17                                                 // Protocol: UDP
+	binary.BigEndian.PutUint32(packet[12:16], ipToUint32(srcIPv4)) // Source IP
+	binary.BigEndian.PutUint32(packet[16:20], ipToUint32(dstIPv4)) // Dest IP
 
 	// Calculate IP header checksum
 	binary.BigEndian.PutUint16(packet[10:12], checksumIPv4(packet[:20]))
@@ -104,8 +108,8 @@ func BuildIPv4UDPPacket(localAddr *net.UDPAddr, srcAddr *net.UDPAddr, payload []
 	// Copy payload
 	copy(packet[28:], payload)
 
-	// Calculate UDP checksum
-	binary.BigEndian.PutUint16(packet[26:28], checksumUDP(srcAddr.IP, localAddr.IP, packet[20:]))
+	// Calculate UDP checksum using normalized IPv4 addresses
+	binary.BigEndian.PutUint16(packet[26:28], checksumUDP(srcIPv4, dstIPv4, packet[20:]))
 
 	return packet
 }
@@ -154,7 +158,25 @@ func isIPv6(ip net.IP) bool {
 	return ip.To4() == nil && len(ip) == net.IPv6len
 }
 
-// checksumIPv4 calculates the IPv4 header checksum
+// checksumIPv4 calculates the IPv4 header checksum.
+//
+// Reference: RFC 791 - Internet Protocol, Section 3.1
+// https://datatracker.ietf.org/doc/html/rfc791#section-3.1
+//
+// The checksum algorithm:
+//  1. Set the checksum field to zero
+//  2. Sum all 16-bit words in the header
+//  3. Add any carry bits to the sum (ones' complement addition)
+//  4. Take the ones' complement of the result
+//
+// The checksum is calculated over the entire IP header (normally 20 bytes).
+// This is a 16-bit ones' complement of the ones' complement sum of all 16-bit
+// words in the header. For purposes of computing the checksum, the value of
+// the checksum field itself is zero.
+//
+// Important: The IP header checksum does NOT cover the data payload, only the
+// IP header itself. This differs from UDP/TCP checksums which cover both header
+// and data.
 func checksumIPv4(header []byte) uint16 {
 	var sum uint32
 	for i := 0; i < len(header); i += 2 {
@@ -170,7 +192,67 @@ func checksumIPv4(header []byte) uint16 {
 	return ^uint16(sum)
 }
 
-// checksumUDP calculates the UDP checksum using a pseudo-header
+// checksumUDP calculates the UDP checksum using a pseudo-header.
+//
+// References:
+//   - RFC 768 - User Datagram Protocol (UDP for IPv4)
+//     https://datatracker.ietf.org/doc/html/rfc768
+//   - RFC 2460 - Internet Protocol, Version 6 (IPv6) Specification, Section 8.1
+//     https://datatracker.ietf.org/doc/html/rfc2460#section-8.1
+//   - RFC 8200 - Internet Protocol, Version 6 (IPv6) Specification (updates RFC 2460)
+//     https://datatracker.ietf.org/doc/html/rfc8200
+//
+// The UDP checksum is calculated over three parts:
+//  1. A pseudo-header (different for IPv4 vs IPv6)
+//  2. The UDP header
+//  3. The UDP data (payload)
+//
+// IPv4 Pseudo-Header (12 bytes, from RFC 768):
+//   +--------+--------+--------+--------+
+//   |       Source Address (4 bytes)   |
+//   +--------+--------+--------+--------+
+//   |     Destination Address (4 bytes)|
+//   +--------+--------+--------+--------+
+//   |  zero  |Protocol|   UDP Length    |
+//   +--------+--------+--------+--------+
+//   Where: Protocol = 17 (UDP)
+//
+// IPv6 Pseudo-Header (40 bytes, from RFC 2460):
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                                                               |
+//   +                         Source Address                        +
+//   |                          (16 bytes)                           |
+//   +                                                               +
+//   |                                                               |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                                                               |
+//   +                      Destination Address                      +
+//   |                          (16 bytes)                           |
+//   +                                                               +
+//   |                                                               |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                   UDP Length (4 bytes)                        |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |                  zeros (3 bytes)     | Next Header (1 byte)   |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   Where: Next Header = 17 (UDP)
+//
+// Checksum Algorithm (same for both IPv4 and IPv6):
+//  1. Set the UDP checksum field to zero
+//  2. Compute the 16-bit ones' complement sum of the pseudo-header,
+//     UDP header, and UDP data
+//  3. If the computed checksum is zero, transmit 0xFFFF (all ones)
+//  4. Otherwise, transmit the computed checksum
+//
+// Note: For IPv4, UDP checksum is optional (can be 0). For IPv6, UDP checksum
+// is MANDATORY and must be calculated and verified.
+//
+// Parameters:
+//   - srcIP: Source IP address (must be 4 bytes for IPv4, 16 bytes for IPv6)
+//   - dstIP: Destination IP address (must be 4 bytes for IPv4, 16 bytes for IPv6)
+//   - udpSegment: Complete UDP packet including header and data
+//
+// Returns: The calculated UDP checksum (0xFFFF if the calculated value is 0)
 func checksumUDP(srcIP, dstIP net.IP, udpSegment []byte) uint16 {
 	var sum uint32
 
