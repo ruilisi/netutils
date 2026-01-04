@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 func FastPing(addr string, timeout time.Duration) error {
@@ -102,4 +104,109 @@ func PingCmd(target net.IP, timeout time.Duration) (time.Duration, error) {
 		return -1, err
 	}
 	return time.Duration(pingResult) * time.Millisecond, nil
+}
+
+// Ping is like regular ping command, sends ICMP packet, requires privileged permission, and returns RTT
+func Ping(target net.IP, timeout time.Duration) (time.Duration, error) {
+	if target == nil {
+		return 0, errors.New("nil target IP")
+	}
+
+	var (
+		network  string
+		icmpType icmp.Type
+		protocol int
+		dst      net.Addr
+	)
+
+	if target.To4() != nil {
+		network = "ip4:icmp"
+		icmpType = ipv4.ICMPTypeEcho
+		protocol = 1
+		dst = &net.IPAddr{IP: target}
+	} else {
+		network = "ip6:ipv6-icmp"
+		icmpType = ipv6.ICMPTypeEchoRequest
+		protocol = 58
+		dst = &net.IPAddr{IP: target}
+	}
+
+	conn, err := icmp.ListenPacket(network, "")
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+
+	// Generate unique ID by combining PID with random value to reduce collision probability
+	// This is important when multiple ping operations run concurrently
+	id := (os.Getpid() & 0xffff) ^ (rand.Intn(0xffff))
+	// Randomize sequence number for additional uniqueness
+	seq := rand.Intn(0xffff)
+
+	msg := icmp.Message{
+		Type: icmpType,
+		Code: 0,
+		Body: &icmp.Echo{
+			ID:   id,
+			Seq:  seq,
+			Data: []byte("PING"),
+		},
+	}
+
+	b, err := msg.Marshal(nil)
+	if err != nil {
+		return 0, err
+	}
+
+	start := time.Now()
+	deadline := start.Add(timeout)
+
+	if _, err := conn.WriteTo(b, dst); err != nil {
+		return 0, err
+	}
+
+	// Read loop to filter out spurious ICMP packets
+	// Since raw ICMP sockets receive ALL ICMP traffic for the protocol,
+	// we need to filter for packets matching our specific ID and sequence number
+	reply := make([]byte, 1500)
+	for {
+		// Update deadline for each read attempt to ensure accurate timeout
+		if err := conn.SetDeadline(deadline); err != nil {
+			return 0, err
+		}
+
+		n, _, err := conn.ReadFrom(reply)
+		if err != nil {
+			// Timeout or other read error
+			return 0, err
+		}
+
+		rm, err := icmp.ParseMessage(protocol, reply[:n])
+		if err != nil {
+			// Ignore malformed packets and continue reading
+			continue
+		}
+
+		switch rm.Type {
+		case ipv4.ICMPTypeEchoReply, ipv6.ICMPTypeEchoReply:
+			body, ok := rm.Body.(*icmp.Echo)
+			if !ok {
+				// Invalid echo reply structure, continue reading
+				continue
+			}
+			// Only accept replies matching our request
+			if body.ID == id && body.Seq == seq {
+				return time.Since(start), nil
+			}
+			// ID/Seq mismatch (likely from another ping), continue reading
+		default:
+			// Ignore other ICMP types (destination unreachable, time exceeded, etc.)
+			continue
+		}
+
+		// Check if we've exceeded timeout while filtering packets
+		if time.Now().After(deadline) {
+			return 0, errors.New("timeout waiting for matching ICMP reply")
+		}
+	}
 }
