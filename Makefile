@@ -32,6 +32,16 @@ test-race:
 test-short:
 	$(GO) test -short $(PKG)
 
+## Run tests with CGO enabled
+.PHONY: test-cgo
+test-cgo:
+	CGO_ENABLED=1 $(GO) test $(PKG)
+
+## Run tests with CGO enabled (verbose)
+.PHONY: test-cgo-v
+test-cgo-v:
+	CGO_ENABLED=1 $(GO) test -v $(PKG)
+
 ## Run tests with coverage report
 .PHONY: test-cover
 test-cover:
@@ -139,6 +149,8 @@ help:
 	@echo "  test-v           - Run tests (verbose)"
 	@echo "  test-race        - Run tests with race detector"
 	@echo "  test-short       - Run short tests only"
+	@echo "  test-cgo         - Run tests with CGO enabled"
+	@echo "  test-cgo-v       - Run tests with CGO enabled (verbose)"
 	@echo "  test-cover       - Run tests with coverage"
 	@echo "  test-cover-html  - Generate HTML coverage report"
 	@echo ""
