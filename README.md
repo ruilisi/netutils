@@ -1,9 +1,20 @@
 # netutils
 
-A comprehensive network utility toolkit written in Go for network diagnostics, packet analysis, and protocol handling.
+A high-performance network utility toolkit written in Go for network diagnostics, packet analysis, and protocol handling.
+
+## Philosophy
+
+This library is designed for **maximum efficiency and performance**. Every function is optimized to be as fast as possible with minimal allocations. We maintain extensive benchmarks to ensure performance remains optimal and to catch any regressions.
+
+Key performance principles:
+- **Zero-copy where possible** - Avoid unnecessary memory allocations
+- **No reflection** - Direct type handling for speed
+- **Preallocated buffers** - Reuse memory to reduce GC pressure
+- **Benchmark-driven development** - All critical paths are benchmarked
 
 ## Features
 
+- **High performance** - Optimized for speed with extensive benchmarks
 - **Cross-platform** - Supports Windows, macOS, and Linux
 - **IPv4/IPv6** - Full dual-stack support throughout
 - **Zero dependencies** for core functionality (optional DNS library for advanced features)
@@ -406,12 +417,65 @@ data, err := util.HexToBytes("48 65 6c 6c 6f")
 
 ---
 
+## Benchmarks
+
+Performance is a first-class concern. All critical code paths include benchmarks to ensure optimal performance and catch regressions.
+
+### Running Benchmarks
+
+```bash
+# Run all benchmarks
+make bench
+
+# Run with memory allocation stats
+make bench-mem
+
+# Run multiple times for stable results
+make bench-count
+
+# Save results for comparison (useful before/after changes)
+make bench-save
+
+# Generate CPU/memory profiles for optimization
+make bench-cpu
+make bench-mem-profile
+```
+
+### Sample Benchmark Results
+
+```
+BenchmarkExtractDNSFromPacket_IPv4Query-8     16M    72 ns/op    48 B/op   4 allocs/op
+BenchmarkExtractDNSFromPacket_IPv4Response-8   8M   159 ns/op   112 B/op   8 allocs/op
+BenchmarkReadDNSName_Simple-8                 27M    45 ns/op    24 B/op   2 allocs/op
+BenchmarkReadDNSName_Compressed-8             25M    47 ns/op    24 B/op   2 allocs/op
+BenchmarkParseDNSMessage_Query-8              19M    63 ns/op    40 B/op   3 allocs/op
+```
+
+### Comparing Performance
+
+Use `benchstat` to compare benchmark results before and after changes:
+
+```bash
+# Before changes
+make bench-save
+mv bench.txt bench-old.txt
+
+# After changes
+make bench-save
+
+# Compare
+benchstat bench-old.txt bench.txt
+```
+
+---
+
 ## Development
 
 ### Prerequisites
 
 - Go 1.23+
 - golangci-lint (for linting)
+- benchstat (optional, for benchmark comparison: `go install golang.org/x/perf/cmd/benchstat@latest`)
 
 ### Makefile Targets
 
@@ -464,6 +528,24 @@ go test -v ./...
 # Run benchmarks
 go test -bench=. -benchmem ./...
 ```
+
+## Contributing
+
+Contributions are welcome! Please ensure your changes:
+
+1. **Include benchmarks** - All new functions in critical paths must have benchmarks
+2. **Don't regress performance** - Run `make bench-save` before and after, compare with `benchstat`
+3. **Minimize allocations** - Prefer stack allocation, reuse buffers where possible
+4. **Pass all checks** - Run `make check` before submitting
+
+### Performance Guidelines
+
+- Avoid `reflect` package in hot paths
+- Prefer `strings.Builder` over string concatenation
+- Use `make([]T, 0, capacity)` when slice size is known
+- Avoid creating closures in loops
+- Use `sync.Pool` for frequently allocated objects
+- Copy small structs instead of using pointers (better cache locality)
 
 ## License
 
