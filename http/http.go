@@ -73,6 +73,7 @@ func DownloadSpeedTCP(conn net.Conn, reqBytes []byte, duration time.Duration) (f
 	var total int64
 	buf := make([]byte, 32*1024)
 	start := time.Now()
+	deadline := start.Add(duration)
 	timeout := time.After(duration)
 
 	for {
@@ -80,7 +81,7 @@ func DownloadSpeedTCP(conn net.Conn, reqBytes []byte, duration time.Duration) (f
 		case <-timeout:
 			return float64(total) / duration.Seconds(), nil
 		default:
-			conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+			conn.SetReadDeadline(deadline)
 			n, err := resp.Body.Read(buf)
 			if n > 0 {
 				total += int64(n)

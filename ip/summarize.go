@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"strings"
 )
 
 /*
@@ -104,28 +103,11 @@ func summarizeTCPShort(pkt []byte, ihl, totalLen int, srcIP, dstIP net.IP) strin
 		handshake = "👍" // ACK
 	}
 
-	// Show only essential flags: SYN, ACK, FIN, RST
-	flagStr := ""
-	if (flags & 0x02) != 0 {
-		flagStr += "SYN "
-	}
-	if (flags & 0x10) != 0 {
-		flagStr += "ACK "
-	}
-	if (flags & 0x01) != 0 {
-		flagStr += "FIN "
-	}
-	if (flags & 0x04) != 0 {
-		flagStr += "RST "
-	}
-	flagStr = strings.TrimSpace(flagStr)
-
 	// Output summary
-	if handshake != "" && flagStr != "" {
-		// If handshake, show only emoji, not flags
+	if handshake != "" {
 		return fmt.Sprintf("IPv4 %s:%d→%s:%d TCP %s | Seq=%d Ack=%d | %dB", srcIP, srcPort, dstIP, dstPort, handshake, seq, ack, payloadLen)
 	}
-	return fmt.Sprintf("IPv4 %s:%d→%s:%d TCP %s | Seq=%d Ack=%d | %dB", srcIP, srcPort, dstIP, dstPort, flagStr, seq, ack, payloadLen)
+	return fmt.Sprintf("IPv4 %s:%d→%s:%d TCP %s | Seq=%d Ack=%d | %dB", srcIP, srcPort, dstIP, dstPort, tcpFlagsStr(flags), seq, ack, payloadLen)
 }
 
 func summarizeICMPv4Short(pkt []byte, ihl, totalLen int, srcIP, dstIP net.IP) string {
@@ -185,13 +167,6 @@ func icmpTypeStringShort(t, code byte) string {
 	}
 }
 
-// max returns the larger of a or b.
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 
 func summarizeIPv6(pkt []byte) string {
 	if len(pkt) < 40 {
@@ -330,28 +305,11 @@ func summarizeTCPShortIPv6(pkt []byte, l4Offset, totalLen int, srcIP, dstIP net.
 		handshake = "👍" // ACK
 	}
 
-	// Show only essential flags: SYN, ACK, FIN, RST
-	flagStr := ""
-	if (flags & 0x02) != 0 {
-		flagStr += "SYN "
-	}
-	if (flags & 0x10) != 0 {
-		flagStr += "ACK "
-	}
-	if (flags & 0x01) != 0 {
-		flagStr += "FIN "
-	}
-	if (flags & 0x04) != 0 {
-		flagStr += "RST "
-	}
-	flagStr = strings.TrimSpace(flagStr)
-
 	// Output summary
-	if handshake != "" && flagStr != "" {
-		// If handshake, show only emoji, not flags
+	if handshake != "" {
 		return fmt.Sprintf("IPv6 %s:%d→%s:%d TCP %s | Seq=%d Ack=%d | %dB", srcIP, srcPort, dstIP, dstPort, handshake, seq, ack, payloadLen)
 	}
-	return fmt.Sprintf("IPv6 %s:%d→%s:%d TCP %s | Seq=%d Ack=%d | %dB", srcIP, srcPort, dstIP, dstPort, flagStr, seq, ack, payloadLen)
+	return fmt.Sprintf("IPv6 %s:%d→%s:%d TCP %s | Seq=%d Ack=%d | %dB", srcIP, srcPort, dstIP, dstPort, tcpFlagsStr(flags), seq, ack, payloadLen)
 }
 
 // summarizeUDPShortIPv6 adapts the IPv4 UDP summarization for IPv6
@@ -394,6 +352,43 @@ func summarizeICMPv6Short(pkt []byte, l4Offset, totalLen int, srcIP, dstIP net.I
 	desc := icmpv6TypeStringShort(icmpType, icmpCode)
 
 	return fmt.Sprintf("IPv6 %s→%s ICMPv6 %s | %dB", srcIP, dstIP, desc, payloadLen)
+}
+
+// tcpFlagsStr returns a space-separated string of TCP flags (SYN, ACK, FIN, RST)
+// Uses a fixed buffer to avoid allocations from string concatenation.
+func tcpFlagsStr(flags byte) string {
+	// Pre-sized buffer: "SYN ACK FIN RST" = 15 chars max
+	var buf [15]byte
+	n := 0
+	if flags&0x02 != 0 {
+		copy(buf[n:], "SYN")
+		n += 3
+	}
+	if flags&0x10 != 0 {
+		if n > 0 {
+			buf[n] = ' '
+			n++
+		}
+		copy(buf[n:], "ACK")
+		n += 3
+	}
+	if flags&0x01 != 0 {
+		if n > 0 {
+			buf[n] = ' '
+			n++
+		}
+		copy(buf[n:], "FIN")
+		n += 3
+	}
+	if flags&0x04 != 0 {
+		if n > 0 {
+			buf[n] = ' '
+			n++
+		}
+		copy(buf[n:], "RST")
+		n += 3
+	}
+	return string(buf[:n])
 }
 
 // icmpv6TypeStringShort returns short human readable string for ICMPv6 type/code

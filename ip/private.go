@@ -4,10 +4,10 @@ import (
 	"net"
 )
 
-var privateCIDRs = []*net.IPNet{}
+var privateCIDRs []*net.IPNet
 
 func init() {
-	for _, cidr := range []string{
+	cidrs := []string{
 		// IPv4 RFC1918
 		"10.0.0.0/8",
 		"172.16.0.0/12",
@@ -18,7 +18,9 @@ func init() {
 		// Loopback
 		"127.0.0.0/8",
 		"::1/128",
-	} {
+	}
+	privateCIDRs = make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err == nil {
 			privateCIDRs = append(privateCIDRs, ipnet)

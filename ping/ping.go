@@ -91,11 +91,12 @@ func PingCmd(target net.IP, timeout time.Duration) (time.Duration, error) {
 		return -1, err
 	}
 	output := string(outputBytes)
-	start := strings.Index(output, "rtt min/avg/max/mdev = ")
-	if start == -1 {
+	const rttPrefix = "rtt min/avg/max/mdev = "
+	_, after, found := strings.Cut(output, rttPrefix)
+	if !found {
 		return -1, errors.New("rtt timeout")
 	}
-	parts := strings.Split(output[start+len("rtt min/avg/max/mdev = "):], "/")
+	parts := strings.Split(after, "/")
 	if len(parts) == 0 {
 		return -1, errors.New("ping unavailable")
 	}
