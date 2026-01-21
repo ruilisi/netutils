@@ -15,7 +15,71 @@ build:
 ## Run tests
 .PHONY: test
 test:
+	$(GO) test $(PKG)
+
+## Run tests with verbose output
+.PHONY: test-v
+test-v:
 	$(GO) test -v $(PKG)
+
+## Run tests with race detector
+.PHONY: test-race
+test-race:
+	$(GO) test -race $(PKG)
+
+## Run short tests only
+.PHONY: test-short
+test-short:
+	$(GO) test -short $(PKG)
+
+## Run tests with coverage report
+.PHONY: test-cover
+test-cover:
+	$(GO) test -cover $(PKG)
+
+## Generate HTML coverage report
+.PHONY: test-cover-html
+test-cover-html:
+	$(GO) test -coverprofile=coverage.out $(PKG)
+	$(GO) tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report: coverage.html"
+
+## Run all benchmarks
+.PHONY: bench
+bench:
+	$(GO) test -bench=. -run=^$$ $(PKG)
+
+## Run benchmarks with memory stats
+.PHONY: bench-mem
+bench-mem:
+	$(GO) test -bench=. -benchmem -run=^$$ $(PKG)
+
+## Run benchmarks multiple times for stable results
+.PHONY: bench-count
+bench-count:
+	$(GO) test -bench=. -benchmem -count=5 -run=^$$ $(PKG)
+
+## Save benchmark results to file (for comparison with benchstat)
+.PHONY: bench-save
+bench-save:
+	$(GO) test -bench=. -benchmem -count=10 -run=^$$ $(PKG) > bench.txt
+	@echo "Benchmark results saved to bench.txt"
+
+## Run benchmarks with CPU profile
+.PHONY: bench-cpu
+bench-cpu:
+	$(GO) test -bench=. -cpuprofile=cpu.out -run=^$$ $(PKG)
+	@echo "CPU profile: cpu.out (view with: go tool pprof cpu.out)"
+
+## Run benchmarks with memory profile
+.PHONY: bench-mem-profile
+bench-mem-profile:
+	$(GO) test -bench=. -memprofile=mem.out -run=^$$ $(PKG)
+	@echo "Memory profile: mem.out (view with: go tool pprof mem.out)"
+
+## Run all checks (fmt, vet, lint, test)
+.PHONY: check
+check: fmt vet lint test
 
 ## Format source code
 .PHONY: fmt
@@ -27,10 +91,12 @@ fmt:
 vet:
 	$(GO) vet $(PKG)
 
-## Clean build output
+## Clean build output and generated files
 .PHONY: clean
 clean:
 	rm -rf bin/
+	rm -f coverage.out coverage.html
+	rm -f cpu.out mem.out bench.txt
 
 ## Tidy up go.mod and go.sum
 .PHONY: tidy
@@ -61,14 +127,36 @@ run:
 .PHONY: help
 help:
 	@echo "make [target]"
-	@echo "  build   - Build the project"
-	@echo "  test    - Run tests"
-	@echo "  fmt     - Format code"
-	@echo "  vet     - Run go vet"
-	@echo "  tidy    - Clean up go.mod/go.sum"
-	@echo "  deps    - Download dependencies"
-	@echo "  install - Install binary"
-	@echo "  run     - Run the app"
-	@echo "  clean   - Remove build files"
-	@echo "  lint    - Run linter (needs golangci-lint)"
+	@echo ""
+	@echo "Build:"
+	@echo "  build            - Build the project"
+	@echo "  install          - Install binary to GOBIN"
+	@echo "  run              - Run the app"
+	@echo "  clean            - Remove build files"
+	@echo ""
+	@echo "Test:"
+	@echo "  test             - Run tests"
+	@echo "  test-v           - Run tests (verbose)"
+	@echo "  test-race        - Run tests with race detector"
+	@echo "  test-short       - Run short tests only"
+	@echo "  test-cover       - Run tests with coverage"
+	@echo "  test-cover-html  - Generate HTML coverage report"
+	@echo ""
+	@echo "Benchmark:"
+	@echo "  bench            - Run all benchmarks"
+	@echo "  bench-mem        - Run benchmarks with memory stats"
+	@echo "  bench-count      - Run benchmarks 5x for stable results"
+	@echo "  bench-save       - Save benchmark results to bench.txt"
+	@echo "  bench-cpu        - Run benchmarks with CPU profile"
+	@echo "  bench-mem-profile - Run benchmarks with memory profile"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  fmt              - Format code"
+	@echo "  vet              - Run go vet"
+	@echo "  lint             - Run linter (needs golangci-lint)"
+	@echo "  check            - Run fmt, vet, lint, and test"
+	@echo ""
+	@echo "Dependencies:"
+	@echo "  tidy             - Clean up go.mod/go.sum"
+	@echo "  deps             - Download dependencies"
 

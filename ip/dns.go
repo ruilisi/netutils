@@ -6,13 +6,18 @@ import (
 	"strings"
 )
 
-// ExtractDNSFromPacket inspects a raw IP packet, auto-detects IPv4/IPv6,
-// finds a UDP/53 payload, and parses the DNS message to return:
-// - qnames: question names (from QD section)
-// - ips: resolved IPs (A/AAAA) from the Answer section (responses only)
-// - isQuery: true if QR=0 (query), false if QR=1 (response)
-// - dnsAddr: DNS server IP address (destination for queries, source for responses)
-// - ok: true if this looks like a valid DNS packet
+// ExtractDNSFromPacket extracts DNS information from a raw IP packet.
+//
+// It auto-detects IPv4/IPv6, locates the UDP payload on port 53, and parses
+// the DNS message. Domain names are returned without leading or trailing dots
+// (e.g., "example.com", not ".example.com" or "example.com.").
+//
+// Returns:
+//   - qnames: domain names from the Question section (e.g., ["example.com"])
+//   - ips: resolved IPs (A/AAAA records) from Answer section (responses only)
+//   - isQuery: true for queries (QR=0), false for responses (QR=1)
+//   - dnsAddr: DNS server IP (destination for queries, source for responses)
+//   - ok: true if packet is a valid DNS packet
 func ExtractDNSFromPacket(pkt []byte) (qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, ok bool) {
 	if len(pkt) < 1 {
 		return nil, nil, false, nil, false
@@ -27,6 +32,8 @@ func ExtractDNSFromPacket(pkt []byte) (qnames []string, ips []net.IP, isQuery bo
 	}
 }
 
+// extractDNSFromIPv4 parses an IPv4 packet containing a UDP/53 DNS message.
+// Skips fragmented packets. Returns same values as ExtractDNSFromPacket.
 func extractDNSFromIPv4(pkt []byte) (qnames []string, ips []net.IP, isQuery bool, dnsAddr net.IP, ok bool) {
 	if len(pkt) < 20 {
 		return nil, nil, false, nil, false
@@ -56,10 +63,7 @@ func extractDNSFromIPv4(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 	}
 	udpLen := int(binary.BigEndian.Uint16(udp[4:6]))
 	payloadOffset := ihl + 8
-	payloadEnd := payloadOffset + (udpLen - 8)
-	if payloadEnd > len(pkt) {
-		payloadEnd = len(pkt)
-	}
+	payloadEnd := min(payloadOffset+(udpLen-8), len(pkt))
 	if payloadOffset >= payloadEnd || payloadOffset > len(pkt) {
 		return nil, nil, false, nil, false
 	}
@@ -69,18 +73,12 @@ func extractDNSFromIPv4(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 		return nil, nil, false, nil, false
 	}
 
-	// Extract source and destination IP addresses
-	srcIP := net.IP(pkt[12:16])
-	dstIP := net.IP(pkt[16:20])
-
-	// Determine DNS server address based on query/response
-	var serverIP net.IP
+	// Determine DNS server address based on query/response (copy to avoid aliasing)
+	serverIP := make(net.IP, 4)
 	if query {
-		// For queries: DNS server is the destination
-		serverIP = dstIP
+		copy(serverIP, pkt[16:20]) // destination
 	} else {
-		// For responses: DNS server is the source
-		serverIP = srcIP
+		copy(serverIP, pkt[12:16]) // source
 	}
 
 	return qn, ipList, query, serverIP, true
@@ -91,9 +89,8 @@ func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 		return nil, nil, false, nil, false
 	}
 
-	// Extract source and destination IP addresses from IPv6 header
-	srcIP := net.IP(pkt[8:24])
-	dstIP := net.IP(pkt[24:40])
+	// Store offsets for later IP copy (avoid aliasing)
+	const srcIPOff, dstIPOff = 8, 24
 
 	next := pkt[6]
 	payloadLen := int(binary.BigEndian.Uint16(pkt[4:6])) // bytes after fixed 40-byte header
@@ -169,10 +166,7 @@ func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 	}
 	udpLen := int(binary.BigEndian.Uint16(pkt[i+4 : i+6]))
 	payloadOffset := i + 8
-	payloadEnd := payloadOffset + (udpLen - 8)
-	if payloadEnd > len(pkt) {
-		payloadEnd = len(pkt)
-	}
+	payloadEnd := min(payloadOffset+(udpLen-8), len(pkt))
 	if payloadOffset >= payloadEnd || payloadOffset > len(pkt) {
 		return nil, nil, false, nil, false
 	}
@@ -182,20 +176,20 @@ func extractDNSFromIPv6(pkt []byte) (qnames []string, ips []net.IP, isQuery bool
 		return nil, nil, false, nil, false
 	}
 
-	// Determine DNS server address based on query/response
-	var serverIP net.IP
+	// Determine DNS server address based on query/response (copy to avoid aliasing)
+	serverIP := make(net.IP, 16)
 	if query {
-		// For queries: DNS server is the destination
-		serverIP = dstIP
+		copy(serverIP, pkt[dstIPOff:dstIPOff+16])
 	} else {
-		// For responses: DNS server is the source
-		serverIP = srcIP
+		copy(serverIP, pkt[srcIPOff:srcIPOff+16])
 	}
 
 	return qn, ipList, query, serverIP, true
 }
 
-// parseDNSMessage parses DNS payload, returning question names and A/AAAA IPs.
+// parseDNSMessage parses a DNS message payload (after UDP header).
+// Returns question domain names (without dots prefix/suffix), resolved IPs from
+// A/AAAA records, and whether this is a query or response.
 func parseDNSMessage(payload []byte) (qnames []string, ips []net.IP, isQuery bool, ok bool) {
 	if len(payload) < 12 {
 		return nil, nil, false, false
@@ -207,7 +201,7 @@ func parseDNSMessage(payload []byte) (qnames []string, ips []net.IP, isQuery boo
 
 	off := 12
 	qnames = make([]string, 0, qdCount)
-	for i := 0; i < qdCount; i++ {
+	for range qdCount {
 		name, newOff, okName := readDNSName(payload, off, 0)
 		if !okName {
 			return nil, nil, false, false
@@ -225,7 +219,7 @@ func parseDNSMessage(payload []byte) (qnames []string, ips []net.IP, isQuery boo
 	}
 
 	ipList := make([]net.IP, 0, anCount)
-	for i := 0; i < anCount; i++ {
+	for range anCount {
 		_, newOff, okName := readDNSName(payload, off, 0)
 		if !okName {
 			return nil, nil, false, false
@@ -250,7 +244,9 @@ func parseDNSMessage(payload []byte) (qnames []string, ips []net.IP, isQuery boo
 			}
 		case 28: // AAAA
 			if len(rdata) == 16 {
-				ipList = append(ipList, net.IP(rdata[:16]))
+				ip := make(net.IP, 16)
+				copy(ip, rdata)
+				ipList = append(ipList, ip)
 			}
 		}
 	}
@@ -260,15 +256,15 @@ func parseDNSMessage(payload []byte) (qnames []string, ips []net.IP, isQuery boo
 // readDNSName reads a (possibly compressed) DNS name starting at off.
 // Returns the name, the offset immediately after where the name appears in the stream,
 // and ok. Depth limits prevent pointer loops.
-func readDNSName(msg []byte, off int, depth int) (string, int, bool) {
-	if depth > 10 {
-		return "", 0, false
-	}
-	var labels []string
-	jumped := false
+func readDNSName(msg []byte, off int, _ int) (string, int, bool) {
+	var b strings.Builder
 	ptrEnd := -1
+	depth := 0
 
 	for {
+		if depth > 10 {
+			return "", 0, false
+		}
 		if off >= len(msg) {
 			return "", 0, false
 		}
@@ -282,38 +278,27 @@ func readDNSName(msg []byte, off int, depth int) (string, int, bool) {
 			if off+l > len(msg) {
 				return "", 0, false
 			}
-			labels = append(labels, string(msg[off:off+l]))
+			if b.Len() > 0 {
+				b.WriteByte('.')
+			}
+			b.Write(msg[off : off+l])
 			off += l
 		case 0xC0:
 			if off >= len(msg) {
 				return "", 0, false
 			}
-			if !jumped {
+			if ptrEnd == -1 {
 				ptrEnd = off + 1
 			}
-			ptr := ((l & 0x3F) << 8) | int(msg[off])
-			off++
-			jumped = true
-			name, _, ok := readDNSName(msg, ptr, depth+1)
-			if !ok {
-				return "", 0, false
-			}
-			if len(labels) > 0 && name != "" {
-				name = strings.Join(labels, ".") + "." + name
-			} else if len(labels) > 0 {
-				name = strings.Join(labels, ".")
-			}
-			if ptrEnd != -1 {
-				return name, ptrEnd, true
-			}
-			return name, off, true
+			off = ((l & 0x3F) << 8) | int(msg[off])
+			depth++
 		default:
 			return "", 0, false
 		}
 	}
-	name := strings.Join(labels, ".")
-	if jumped && ptrEnd != -1 {
-		return name, ptrEnd, true
+
+	if ptrEnd != -1 {
+		return b.String(), ptrEnd, true
 	}
-	return name, off, true
+	return b.String(), off, true
 }
