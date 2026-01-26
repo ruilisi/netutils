@@ -1,5 +1,7 @@
 package ip
 
+import "fmt"
+
 // IP Protocol Numbers (IANA assigned)
 // https://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml
 const (
@@ -155,3 +157,32 @@ const (
 	ProtoReserved254 uint8 = 254 // Use for experimentation and testing
 	ProtoReserved    uint8 = 255 // Reserved
 )
+
+// protoNames maps common protocol numbers to short names for logging.
+var protoNames = map[uint8]string{
+	ProtoHOPOPT:    "HOPOPT",
+	ProtoICMP:      "ICMP",
+	ProtoIGMP:      "IGMP",
+	ProtoIPv4:      "IPv4",
+	ProtoTCP:       "TCP",
+	ProtoUDP:       "UDP",
+	ProtoIPv6:      "IPv6",
+	ProtoIPv6Route: "IPv6-Route",
+	ProtoIPv6Frag:  "IPv6-Frag",
+	ProtoGRE:       "GRE",
+	ProtoESP:       "ESP",
+	ProtoAH:        "AH",
+	ProtoIPv6ICMP:  "ICMPv6",
+	ProtoIPv6NoNxt: "IPv6-NoNxt",
+	ProtoIPv6Opts:  "IPv6-Opts",
+	ProtoSCTP:      "SCTP",
+}
+
+// ProtoName returns a human-readable name for the given IP protocol number.
+// Returns the short name for common protocols, or the decimal number for others.
+func ProtoName(proto uint8) string {
+	if name, ok := protoNames[proto]; ok {
+		return name
+	}
+	return fmt.Sprintf("%d", proto)
+}
